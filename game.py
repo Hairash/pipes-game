@@ -158,6 +158,7 @@ class Game:
         self.field = [[CELL_VALUES.EMPTY] * self.rows for _ in range(self.rows)]
         self.prev_field = deepcopy(self.field)
         self.balls = balls
+        self.pipes = []
 
         self.cur_cell = None
         self.cur_quarter = None
@@ -390,7 +391,7 @@ class Game:
 
         cur_cell = self.get_cur_cell()
         cur_x, cur_y = cur_cell
-        if self.field[cur_x][cur_y] != CELL_VALUES.EMPTY:
+        if self.field[cur_x][cur_y] != CELL_VALUES.EMPTY or not self.is_free(cur_cell):
             self.cancel_pipe()
             return
 
@@ -413,7 +414,9 @@ class Game:
         self.pipe_path += [self.cur_cell, next_cell]
         # make next cell reserved
         self.change_cell(*next_cell, CELL_VALUES.RESERVED)
-        Pipe(self.pipe_path)
+        self.pipes.append(Pipe(self.pipe_path))
+        # really not necessary
+        self.draw_balls()
         self.init_pipe_parameters()
 
     def is_ball_here(self):
@@ -433,12 +436,13 @@ class Game:
     def continue_move_ball(self):
         if not self.has_cell_changed():
             return
-        cur_cell = self.get_cur_cell()
-        if not self.is_cell_empty_and_free(cur_cell):
+        next_cell = self.get_cur_cell()
+        if not self.is_cell_ok_for_move(self.cur_cell, next_cell):
             print('occupied')
             self.init_ball_parameters()
             return
-        self.move_ball(cur_cell)
+        next_cell = self.get_destination(self.cur_cell, next_cell)
+        self.move_ball(next_cell)
         self.init_ball_parameters()
 
     def move_ball(self, cur_cell):
@@ -477,11 +481,31 @@ class Game:
                 return ball_idx
         raise Exception(f'No ball found at cell {cur_cell}')
 
-    def is_cell_empty_and_free(self, cur_cell):
+    def is_cell_ok_for_move(self, prev_cell, cur_cell):
         x, y = cur_cell
+        for pipe in self.pipes:
+            for edge in pipe.edges:
+                if edge['entry_point'] == prev_cell and edge['pipe_edge'] == cur_cell:
+                    destination = self.get_destination(prev_cell, cur_cell)
+                    if self.is_free(destination):
+                        return True
         if self.field[x][y] not in [CELL_VALUES.EMPTY, CELL_VALUES.RESERVED]:
             return False
+        if not self.is_free(cur_cell):
+            return False
+        return True
+
+    def get_destination(self, cur_cell, next_cell):
+        for pipe in self.pipes:
+            for edge_num in range(len(pipe.edges)):
+                edge = pipe.edges[edge_num]
+                if edge['entry_point'] == cur_cell and edge['pipe_edge'] == next_cell:
+                    another_edge = pipe.edges[(edge_num + 1) % 2]
+                    return another_edge['entry_point']
+        return next_cell
+
+    def is_free(self, cell):
         for ball in self.balls:
-            if ball[1] == cur_cell:
+            if ball[1] == cell:
                 return False
         return True
