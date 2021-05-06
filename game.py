@@ -132,6 +132,11 @@ def get_cell_values_images(cell_size):
             pygame.transform.scale(pygame.image.load('images/right down.png'), (cell_size, cell_size)),
     }
 
+def get_player_balls_images(cell_size):
+    return {
+        0: pygame.transform.scale(pygame.image.load('images/red_ball.png'), (cell_size, cell_size)),
+        1: pygame.transform.scale(pygame.image.load('images/blue_ball.png'), (cell_size, cell_size)),
+    }
 
 class QUARTER:
     UP = 2
@@ -141,22 +146,25 @@ class QUARTER:
 
 
 class Game:
-    def __init__(self, window_size, rows):
+    def __init__(self, window_size, rows, balls):
         self.window_size = window_size
         self.rows = rows
         self.cell_size = self.window_size // self.rows
         self.window = pygame.display.set_mode((self.window_size, self.window_size))
         # self.CELL_VALUES = get_cell_values(self.cell_size)
         self.CELL_VALUES_IMAGES = get_cell_values_images(self.cell_size)
+        self.PLAYER_BALLS_IMAGES = get_player_balls_images(self.cell_size)
 
         self.field = [[CELL_VALUES.EMPTY] * self.rows for _ in range(self.rows)]
         self.prev_field = deepcopy(self.field)
+        self.balls = balls
 
         self.cur_cell = None
         self.cur_quarter = None
         self.pipe_drag = False
         self.pipe_path = None
         self.ball_drag = False
+        self.cur_ball_idx = None
 
     def init_pipe_parameters(self):
         self.cur_cell = None
@@ -184,6 +192,7 @@ class Game:
 
         # self.draw_grid()
         self.draw_field()
+        self.draw_balls()
 
         while True:
             for event in pygame.event.get():
@@ -192,12 +201,21 @@ class Game:
                     # pygame.quit()
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        self.start_draw_pipe()
+                        if self.is_ball_here():
+                            self.start_move_ball()
+                        else:
+                            self.start_draw_pipe()
                 elif event.type == pygame.MOUSEMOTION:
-                    self.continue_draw_pipe()
+                    if self.pipe_drag:
+                        self.continue_draw_pipe()
+                    if self.ball_drag:
+                        self.continue_move_ball()
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:
-                        self.stop_draw_pipe()
+                        if self.pipe_drag:
+                            self.stop_draw_pipe()
+                        if self.ball_drag:
+                            self.stop_move_ball()
 
     def coordinates_to_cell(self, x, y):
         cell_x = x // self.cell_size
@@ -219,6 +237,7 @@ class Game:
         """"""
         self.field = deepcopy(self.prev_field)
         self.draw_field()
+        self.draw_balls()
         self.init_pipe_parameters()
 
     def cell_image_coordinates(self, cell_x, cell_y):
@@ -266,10 +285,11 @@ class Game:
         neighbor = self.neighbor_by_quarter(*self.cur_cell, quarter)
         return neighbor
 
-    def cell_changed(self):
+    def has_cell_changed(self):
         return self.cur_cell != self.get_cur_cell()
 
     def quarter_changed(self):
+        # TODO: may be slow
         mouse_pos = pygame.mouse.get_pos()
         return self.cur_quarter != self.get_cell_quarter(*mouse_pos, *self.cur_cell)
 
@@ -346,10 +366,7 @@ class Game:
         self.change_cell(*self.cur_cell, value)
 
     def continue_draw_pipe(self):
-        if not self.pipe_drag:
-            return
-
-        '''Main logic
+        """Main logic
         + Store only cur_cell and path
         + Check, if cell changed
         + On change check is change correct (empty or reserved cell)
@@ -357,10 +374,10 @@ class Game:
             Maybe - stop, if it's easier to do
         + If correct - update cur_cell and path
         + If len(path) > 2 - draw smth
-        '''
+        """
 
         # print('path:', self.pipe_path)
-        if not self.cell_changed():
+        if not self.has_cell_changed():
             if not self.quarter_changed():
                 return
             mouse_pos = pygame.mouse.get_pos()
@@ -398,3 +415,73 @@ class Game:
         self.change_cell(*next_cell, CELL_VALUES.RESERVED)
         Pipe(self.pipe_path)
         self.init_pipe_parameters()
+
+    def is_ball_here(self):
+        cur_cell = self.get_cur_cell()
+        for ball in self.balls:
+            ball_cell = ball[1]
+            if cur_cell == ball_cell:
+                return True
+        return False
+
+    def start_move_ball(self):
+        print('start_move_ball')
+        self.ball_drag = True
+        self.cur_ball_idx = self.get_cur_ball_idx()
+        self.cur_cell = self.get_cur_cell()
+
+    def continue_move_ball(self):
+        if not self.has_cell_changed():
+            return
+        cur_cell = self.get_cur_cell()
+        if not self.is_cell_empty_and_free(cur_cell):
+            print('occupied')
+            self.init_ball_parameters()
+            return
+        self.move_ball(cur_cell)
+        self.init_ball_parameters()
+
+    def move_ball(self, cur_cell):
+        print('move_ball')
+        self.fill_cell(*self.cur_cell)
+        cur_ball = self.balls[self.cur_ball_idx]
+        cur_ball[1] = cur_cell
+        self.draw_ball(cur_ball[0], cur_ball[1])
+
+    def stop_move_ball(self):
+        pass
+
+    def draw_balls(self):
+        for ball_idx in range(len(self.balls)):
+            ball = self.balls[ball_idx]
+            self.draw_ball(ball[0], ball[1])
+
+    def draw_ball(self, player_num, ball_cell):
+        x, y = self.cell_image_coordinates(*ball_cell)
+        self.window.blit(self.PLAYER_BALLS_IMAGES[player_num], (x, y))
+        pygame.display.update()
+
+    def init_ball_parameters(self):
+        self.ball_drag = False
+        self.cur_ball_idx = None
+        self.cur_cell = None
+
+    def get_cur_ball_idx(self):
+        cur_cell = self.get_cur_cell()
+        for ball_idx in range(len(self.balls)):
+            ball = self.balls[ball_idx]
+            player_num = ball[0]
+            ball_cell = ball[1]
+            if cur_cell == ball_cell:
+                # ball = {'cell': cur_cell, 'player_num': player_num}
+                return ball_idx
+        raise Exception(f'No ball found at cell {cur_cell}')
+
+    def is_cell_empty_and_free(self, cur_cell):
+        x, y = cur_cell
+        if self.field[x][y] not in [CELL_VALUES.EMPTY, CELL_VALUES.RESERVED]:
+            return False
+        for ball in self.balls:
+            if ball[1] == cur_cell:
+                return False
+        return True
