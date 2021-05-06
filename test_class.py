@@ -7,7 +7,7 @@ class VALUES:
         desc = 'another'
 
     def __iter__(self):
-
+        pass
 
 x = 1
 for cl in VALUES:
