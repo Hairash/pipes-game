@@ -163,6 +163,7 @@ class Game:
         self.PLAYER_BALLS_IMAGES = get_player_balls_images(self.cell_size)
 
         self.num_of_players = 2
+        self.players_resources = [1] * self.num_of_players
         self.cur_player = 0
         self.field = [[CELL_VALUES.EMPTY] * self.rows for _ in range(self.rows)]
         self.prev_field = deepcopy(self.field)
@@ -453,6 +454,10 @@ class Game:
                 (self.field[next_x][next_y] not in [CELL_VALUES.EMPTY, CELL_VALUES.RESERVED]):
             self.cancel_pipe()
             return
+        if len(self.pipe_path) > self.players_resources[self.cur_player]:
+            self.cancel_pipe()
+            return
+        self.players_resources[self.cur_player] -= len(self.pipe_path)
         self.pipe_path += [self.cur_cell, next_cell]
         # make next cell reserved
         self.change_cell(*next_cell, CELL_VALUES.RESERVED)
@@ -561,9 +566,11 @@ class Game:
 
     def end_turn(self):
         self.cur_player = (self.cur_player + 1) % self.num_of_players
+        self.add_resources_cur_player()
         self.output_cur_player()
 
     def refresh_info(self):
+        self.info = f'Players resources: {self.players_resources} Current player: {self.cur_player}'
         pygame.draw.rect(self.window, GRAY, (
             0, self.window_size, self.window_size, self.window_size + PANEL_SIZE
         ))
@@ -578,3 +585,6 @@ class Game:
     def output_cur_player(self):
         self.info = f'Player\'s {self.cur_player} turn'
         self.refresh_info()
+
+    def add_resources_cur_player(self):
+        self.players_resources[self.cur_player] += 1
