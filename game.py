@@ -72,6 +72,12 @@ class CELL_VALUES:
     LEFT_DOWN = 7
     RIGHT_DOWN = 9
 
+    POINT_FREE = 10
+    POINT_1 = 11
+    POINT_2 = 12
+    POINT_3 = 13
+    POINT_4 = 14
+
 
 # def get_cell_values(cell_size):
 #     return {
@@ -141,8 +147,20 @@ def get_cell_values_images(cell_size):
 
 def get_player_balls_images(cell_size):
     return {
-        0: pygame.transform.scale(pygame.image.load('images/red_ball.png'), (cell_size, cell_size)),
-        1: pygame.transform.scale(pygame.image.load('images/blue_ball.png'), (cell_size, cell_size)),
+        0: pygame.transform.scale(pygame.image.load('images/red_ball_new.png'), (cell_size, cell_size)),
+        1: pygame.transform.scale(pygame.image.load('images/blue_ball_new.png'), (cell_size, cell_size)),
+        2: pygame.transform.scale(pygame.image.load('images/yellow_ball_new.png'), (cell_size, cell_size)),
+        3: pygame.transform.scale(pygame.image.load('images/violet_ball_new.png'), (cell_size, cell_size)),
+    }
+
+
+def get_player_points_images(cell_size):
+    return {
+        -1: pygame.transform.scale(pygame.image.load('images/point_free.png'), (cell_size, cell_size)),
+        0: pygame.transform.scale(pygame.image.load('images/point_red.png'), (cell_size, cell_size)),
+        1: pygame.transform.scale(pygame.image.load('images/point_blue.png'), (cell_size, cell_size)),
+        2: pygame.transform.scale(pygame.image.load('images/point_yellow.png'), (cell_size, cell_size)),
+        3: pygame.transform.scale(pygame.image.load('images/point_violet.png'), (cell_size, cell_size)),
     }
 
 
@@ -154,20 +172,23 @@ class QUARTER:
 
 
 class Game:
-    def __init__(self, window_size, rows, balls):
+    def __init__(self, window_size, rows, balls, points, num_of_players):
         self.window_size = window_size
         self.rows = rows
         self.cell_size = self.window_size // self.rows
         self.window = pygame.display.set_mode((self.window_size, self.window_size + PANEL_SIZE))
         self.CELL_VALUES_IMAGES = get_cell_values_images(self.cell_size)
         self.PLAYER_BALLS_IMAGES = get_player_balls_images(self.cell_size)
+        self.PLAYER_POINTS_IMAGES = get_player_points_images(self.cell_size)
 
-        self.num_of_players = 2
-        self.players_resources = [1] * self.num_of_players
+        self.num_of_players = num_of_players
+        self.players_resources = self.init_resources()
         self.cur_player = 0
         self.field = [[CELL_VALUES.EMPTY] * self.rows for _ in range(self.rows)]
+        # self.set_points(points)
         self.prev_field = deepcopy(self.field)
         self.balls = balls
+        self.points = [[-1, cell] for cell in points]
         self.pipes = []
         self.info = 'Init game'
 
@@ -202,6 +223,7 @@ class Game:
 
         # self.draw_grid()
         self.draw_field()
+        self.draw_points()
         self.draw_balls()
         self.draw_panel()
         self.output_cur_player()
@@ -252,6 +274,7 @@ class Game:
         self.field = deepcopy(self.prev_field)
         # TODO: redraw only cells in canceled pipe path (may be done with animation)
         self.draw_field()
+        self.draw_points()
         self.draw_balls()
         self.init_pipe_parameters()
 
@@ -382,9 +405,9 @@ class Game:
             return
         self.cur_cell = self.get_cur_cell()
         # TODO: How to do without this vars
-        cell_x, cell_y = self.cur_cell
-        if self.field[cell_x][cell_y] != CELL_VALUES.EMPTY:
+        if not self.is_ok_for_draw(self.cur_cell):
             return
+        cell_x, cell_y = self.cur_cell
         mouse_pos = pygame.mouse.get_pos()
         self.cur_quarter = self.get_cell_quarter(*mouse_pos, *self.cur_cell)
         prev_cell = self.get_neighbor_by_quarter()
@@ -399,6 +422,7 @@ class Game:
         self.change_cell(*prev_cell, CELL_VALUES.RESERVED)
         value = self.calculate_cell_value(None, self.cur_cell, prev_cell)
         self.change_cell(*self.cur_cell, value)
+        self.draw_points()
         self.draw_balls()
 
     def continue_draw_pipe(self):
@@ -430,7 +454,8 @@ class Game:
 
         cur_cell = self.get_cur_cell()
         cur_x, cur_y = cur_cell
-        if self.field[cur_x][cur_y] != CELL_VALUES.EMPTY or not self.is_free(cur_cell):
+        if not self.is_ok_for_draw(cur_cell):
+        # if self.field[cur_x][cur_y] != CELL_VALUES.EMPTY or not self.is_free(cur_cell):
             self.cancel_pipe()
             return
 
@@ -463,6 +488,7 @@ class Game:
         self.change_cell(*next_cell, CELL_VALUES.RESERVED)
         self.pipes.append(Pipe(self.pipe_path))
         # really not necessary
+        self.draw_points()
         self.draw_balls()
         self.init_pipe_parameters()
         self.end_turn()
@@ -498,14 +524,21 @@ class Game:
             return
         next_cell = self.get_destination(self.cur_cell, next_cell)
         self.move_ball(next_cell)
+        if self.is_point(next_cell):
+            self.capture_point(next_cell)
+            self.draw_ball(self.cur_player, next_cell)
         self.init_ball_parameters()
         self.end_turn()
 
-    def move_ball(self, cur_cell):
+    def move_ball(self, to_cell):
         print('move_ball')
-        self.fill_cell(*self.cur_cell)
+        from_cell = self.cur_cell
+        self.fill_cell(*from_cell)
+        if self.is_point(from_cell):
+            self.draw_point_by_cell(from_cell)
+        # self.draw_points()
         cur_ball = self.balls[self.cur_ball_idx]
-        cur_ball[1] = cur_cell
+        cur_ball[1] = to_cell
         self.draw_ball(cur_ball[0], cur_ball[1])
 
     def stop_move_ball(self):
@@ -588,3 +621,62 @@ class Game:
 
     def add_resources_cur_player(self):
         self.players_resources[self.cur_player] += 1
+
+    def set_points(self, points):
+        """Not used"""
+        for point in points:
+            x, y = point
+            self.field[x][y] = CELL_VALUES.POINT_FREE
+
+    def draw_points(self):
+        for point in self.points:
+            self.draw_point(*point)
+
+    def draw_point(self, player_num, cell):
+        x, y = self.cell_image_coordinates(*cell)
+        self.window.blit(self.PLAYER_POINTS_IMAGES[player_num], (x, y))
+
+    def is_ok_for_draw(self, cell):
+        cell_x, cell_y = cell
+        if self.field[cell_x][cell_y] != CELL_VALUES.EMPTY:
+            return False
+        if not self.is_free(cell):
+            return False
+        if self.is_point(cell):
+            return False
+        return True
+
+    def is_point(self, cell):
+        for point in self.points:
+            player_num, point_cell = point
+            if point_cell == cell:
+                return True
+        return False
+
+    def draw_point_by_cell(self, from_cell):
+        point = self.get_point_by_cell(from_cell)
+        self.draw_point(*point)
+
+    def get_point_by_cell(self, cell):
+        idx = self.get_point_idx_by_cell(cell)
+        return self.points[idx]
+
+    def get_point_idx_by_cell(self, cell):
+        for idx in range(len(self.points)):
+            point = self.points[idx]
+            player_num, point_cell = point
+            if point_cell == cell:
+                return idx
+        raise Exception(f'No point in cell {cell}')
+
+    def capture_point(self, cell):
+        point = self.get_point_by_cell(cell)
+        point[0] = self.cur_player
+        self.draw_point(*point)
+
+    def init_resources(self):
+        res = [1] * self.num_of_players
+        for i in range(2, self.num_of_players):
+            res[i] += i - 1
+        return res
+
